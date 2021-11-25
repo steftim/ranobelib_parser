@@ -94,7 +94,7 @@ async def main():
         urllen -= 8
     bookname = url[urllen:url.find("?")]
     
-    browser = await launch(headless=False, defaultViewport=False)
+    browser = await launch(headless=True, defaultViewport=False)
     context = await browser.createIncognitoBrowserContext()
 
     software_names = [SoftwareName.CHROME.value]
@@ -131,17 +131,20 @@ async def main():
                     imgtag = imgdiv.querySelector('img');
                     link = document.createElement('a');
                     link.download = 'cover.jpg';
-                    link.href = imgtag.src;
-                    link.innerText = imgtag.src;
+                    link.href = imgtag.src.replace('staticlib.me', 'ranobelib.me');
+                    link.innerText = imgtag.src.replace('staticlib.me', 'ranobelib.me');
                     link.className = 'download_link_cover';
+                    deltag = document.querySelector('.media-sidebar-actions');
+                    deltag.remove();
                     imgtag.after(link);
                 }}'''
                 )
-    page.click('.download_link_cover')
+    await page.click('.download_link_cover')
     await asyncio.sleep(1)
 
     img = open(download_path + "\cover.jpg", "rb")
     bookpic = str("/9") + str(base64.b64encode(img.read())[2:-1])[2:-1]
+    img.close()
 
     
     chapters_info = await page.content()
@@ -163,14 +166,14 @@ async def main():
     chapthref = baseurl + str("/") + bookname + str("/v") + str(vol) + str("/c") + str(stchpt)
     nextchapthref = str("")
     if(bid != -1):
-        forurl += str("?bid=") + str(bid)
+        chapthref += str("?bid=") + str(bid)
     
     chaptnum = stchpt
 
     repeats = 0
 
     i = stchpt
-    while(repeats <= 3):
+    while(repeats <= 3 and chapthref != '###END###'):
         page = await browser.newPage()
 
         cdp = await page.target.createCDPSession();
@@ -212,6 +215,9 @@ async def main():
         
         pos = pagestring.find(fndstr)
         nextchapthref = pagestring[pos+len(fndstr) : pagestring.find("\" tabindex=", pos)]
+        if(nextchapthref.find('class="reader-next__btn button text-truncate" tabindex="-1">На страницу тайтла</a>') != -1):
+            nextchapthref = '###END###'
+        print('nextchapthref {0}', nextchapthref)
 
         if(booktext.find("<img class=\"lazyload") != -1):
             while(True):
@@ -314,7 +320,7 @@ async def main():
     globaltext = globaltext.replace("</div>", "")
 
     print("\nSaving to file...")
-    book = templ().format(nickname = authorname, title = titlename, annotation = annot, characters = globaltext, cover = str(base64.b64encode(bookpic))[2:-1], binaries = imgbin)
+    book = templ().format(nickname = authorname, title = titlename, annotation = annot, characters = globaltext, cover = str(bookpic), binaries = imgbin)
     file.write(book)
     file.close()
 asyncio.get_event_loop().run_until_complete(main())
