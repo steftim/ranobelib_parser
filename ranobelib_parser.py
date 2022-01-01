@@ -59,7 +59,7 @@ async def main():
     def parser(content):
         textf = "<div class=\"reader-container container container_center\">"
         pos1 = content.find(textf)
-        pos2 = content.find("<div class=\"container container_center\">", pos1 + len(textf))
+        pos2 = content.find("</div>", pos1 + len(textf))
         text = content[pos1+len(textf):pos2]
         return text
 
@@ -68,6 +68,9 @@ async def main():
     vol = int(input("Volume: "))
     stchpt = int(input("Start chapter: "))
     #endchpt = int(input("End chapter: "))
+    isPics = True
+    if(input("Download pictures in text? [Y/n]: ") == 'n'):
+        isPics = False
 
     while(True):
         filename = input("Output filename (without file extension): ")
@@ -110,7 +113,8 @@ async def main():
     await page.setViewport({'width': width, 'height': height});
 
     download_path = str(os.path.realpath(__file__)).replace("\\" + os.path.basename(__file__), "") + "\pics"
-    shutil.rmtree(download_path)
+    if os.path.exists(download_path) and os.path.isdir(download_path):
+        shutil.rmtree(download_path)
     os.mkdir(download_path)
     cdp = await page.target.createCDPSession();
     await cdp.send('Page.setDownloadBehavior', { 'behavior': 'allow', 'downloadPath': download_path});
@@ -120,6 +124,7 @@ async def main():
         forurl += str("?bid=") + str(bid) + str("&section=chapters")
     else:
         forurl += str("?section=chapters")
+    print("go to: " + forurl)
     await page.goto(forurl)
     await page.screenshot({'fullPage': 'True'})
     await asyncio.sleep(3)
@@ -173,7 +178,7 @@ async def main():
     repeats = 0
 
     i = stchpt
-    while(repeats <= 3 and chapthref != '###END###'):
+    while(repeats <= 3 or chapthref != '###END###'):
         page = await browser.newPage()
 
         cdp = await page.target.createCDPSession();
@@ -217,7 +222,7 @@ async def main():
         nextchapthref = pagestring[pos+len(fndstr) : pagestring.find("\" tabindex=", pos)]
         if(nextchapthref.find('class="reader-next__btn button text-truncate" tabindex="-1">На страницу тайтла</a>') != -1):
             nextchapthref = '###END###'
-        print('nextchapthref {0}', nextchapthref)
+        print('nextchapthref ', nextchapthref)
 
         if(booktext.find("<img class=\"lazyload") != -1):
             while(True):
@@ -225,7 +230,11 @@ async def main():
                 k = 0
                 shutil.rmtree(download_path)
                 os.mkdir(download_path)
-                print("pictures detected in text, moving to ranobelib.me domain")
+                print("pictures detected in text, ", end='')
+                if(isPics == True):
+                    print("moving to ranobelib.me domain")
+                else:
+                    print("ignoring")
                 pageinc = await context.newPage()
                 useragent = user_agent_rotator.get_random_user_agent()
                 await pageinc.setUserAgent(useragent)
@@ -252,55 +261,74 @@ async def main():
                 repeats = 0
                 await pageinc.screenshot({'fullPage': 'True'})
                 await asyncio.sleep(0.5)
-                imgcol = await pageinc.evaluate(
-                '''
-                () => {{
-                    imgdiv = document.querySelectorAll('.article-image');
-                    for(it = 0; it < imgdiv.length; it++){
-                        imgdiv[it].scrollIntoView()
-                        imgtag = imgdiv[it].querySelector('.lazyload');
-                        link = document.createElement('a');
-                        link.download = 'img_' + it + '.jpg';
-                        link.href = imgtag.src;
-                        link.innerText = imgtag.src;
-                        link.className = 'download_link_number_' + it;
-                        imgtag.after(link);
+                if(isPics == True):
+                    imgcol = await pageinc.evaluate(
+                    '''
+                    () => {{
+                        imgdiv = document.querySelectorAll('.article-image');
+                        for(it = 0; it < imgdiv.length; it++){
+                            imgdiv[it].scrollIntoView()
+                            imgtag = imgdiv[it].querySelector('.lazyload');
+                            link = document.createElement('a');
+                            link.download = 'img_' + it + '.jpg';
+                            link.href = imgtag.src;
+                            link.innerText = imgtag.src;
+                            link.className = 'download_link_number_' + it;
+                            imgtag.after(link);
 
-                    }
-                    return imgdiv.length
-                }}'''
-                )
+                        }
+                        return imgdiv.length
+                    }}'''
+                    )
                                         
 
-                for k in range(imgcol):
-                    await pageinc.click('.download_link_number_' + str(k))
-                    await asyncio.sleep(1)
+                    for k in range(imgcol):
+                        await pageinc.click('.download_link_number_' + str(k))
+                        await asyncio.sleep(1)
 
-                for k in range(imgcol):
-                    await pageinc.evaluate('''
-                () => {{
-                    imgdiv = document.querySelectorAll('.article-image');
-                    for(i = 0; i < imgdiv.length; i++){
-                        link = document.querySelector('.download_link_number_' + i);
-                        link.remove();
-                        a = document.createElement('a');
-                        a.innerText = "<image l:href=\\"#''' + str(vol) + "-" + str(chaptnum) + '''_" + i + ".jpg\\"/" + ">";
-                        imgdiv[i].after(a);
-                        imgdiv[i].remove();
-                    }
-                }}''')
+                    for k in range(imgcol):
+                        await pageinc.evaluate('''
+                    () => {{
+                        imgdiv = document.querySelectorAll('.article-image');
+                        for(i = 0; i < imgdiv.length; i++){
+                            link = document.querySelector('.download_link_number_' + i);
+                            link.remove();
+                            a = document.createElement('a');
+                            a.innerText = "<image l:href=\\"#''' + str(vol) + "-" + str(chaptnum) + '''_" + i + ".jpg\\"/" + ">";
+                            imgdiv[i].after(a);
+                            imgdiv[i].remove();
+                        }
+                    }}''')
                 
-                booktext = parser(await pageinc.content())
+                    booktext = parser(await pageinc.content())
 
-                booktext = booktext.replace("<a>&lt;", "<")
-                booktext = booktext.replace("&gt;</a>", ">")
+                    booktext = booktext.replace("<a>&lt;", "<")
+                    booktext = booktext.replace("&gt;</a>", ">")
 
-                pos = 0
+                    pos = 0
 
-                for k in range(imgcol):
-                    img = open(download_path + "\img_" + str(k) + ".jpg", "rb")
-                    imgbin += str(templ_bin().format(name = str(str(vol) + "-" + str(chaptnum) + "_" + str(k) + ".jpg"), base = str("/9") + str(base64.b64encode(img.read())[2:-1])[2:-1])) + "\n"
-                    img.close()
+                    for k in range(imgcol):
+                        img = open(download_path + "\img_" + str(k) + ".jpg", "rb")
+                        imgbin += str(templ_bin().format(name = str(str(vol) + "-" + str(chaptnum) + "_" + str(k) + ".jpg"), base = str("/9") + str(base64.b64encode(img.read())[2:-1])[2:-1])) + "\n"
+                        img.close()
+                else:
+                    imgcol = await pageinc.evaluate(
+                    '''
+                    () => {{
+                        imgdiv = document.querySelectorAll('.article-image');
+                        for(it = 0; it < imgdiv.length; it++){
+                            imgdiv[it].scrollIntoView()
+                            imgtag = imgdiv[it].querySelector('.lazyload');
+                            imgtag.remove();
+                        }
+                        return imgdiv.length
+                    }}'''
+                    )
+
+                    booktext = parser(await pageinc.content())
+
+                    booktext = booktext.replace("<a>&lt;", "<")
+                    booktext = booktext.replace("&gt;</a>", ">")
                 await pageinc.close()
                 break
         booktext = booktext.replace("&nbsp;", " ")
